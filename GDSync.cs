@@ -22,6 +22,7 @@ public partial class GDSync : Node
 	public static event Action<int, string, Variant> PlayerDataChanged; //client ID | key | value
 	public static event Action<Godot.Collections.Array> LobbiesReceived; //lobbies
 	public static event Action<bool, int> HostChanged; //is host | host ID
+	public static event Action<string, Godot.Collections.Array> SyncedEventTriggered; //event name | parameters
 
 	public override void _Ready()
 	{
@@ -43,6 +44,7 @@ public partial class GDSync : Node
 		GDSYNC.Connect("player_data_changed", Callable.From((int clientID, string key, Variant value) => { PlayerDataChanged?.Invoke(clientID, key, value); }));
 		GDSYNC.Connect("lobbies_received", Callable.From((Godot.Collections.Array lobbies) => { LobbiesReceived?.Invoke(lobbies); }));
 		GDSYNC.Connect("host_changed", Callable.From((bool isHost, int hostID) => { HostChanged?.Invoke(isHost, hostID); }));
+		GDSYNC.Connect("synced_event_triggered", Callable.From((string eventName, Godot.Collections.Array parameters) => { SyncedEventTriggered?.Invoke(eventName, parameters); }));
 	}
 
 
@@ -111,6 +113,12 @@ public partial class GDSync : Node
 	public static void CallFuncOn(int clientID, Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
 	{
 		GDSYNC.Call("call_func_on", clientID, callable, parameters, reliable);
+	}
+
+	public static void CreateSyncedEvent(string eventName, float delay = 1.0f, Godot.Collections.Array parameters = null)
+	{
+		if (parameters == null) parameters = new Godot.Collections.Array();
+		GDSYNC.Call("create_synced_event", eventName, delay, parameters);
 	}
 	#endregion
 
