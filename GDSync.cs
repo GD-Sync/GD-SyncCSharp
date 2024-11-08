@@ -120,6 +120,12 @@ public partial class GDSync : Node
 		if (parameters == null) parameters = new Godot.Collections.Array();
 		GDSYNC.Call("create_synced_event", eventName, delay, parameters);
 	}
+
+	public static Node MultiplayerInstantiate(PackedScene scene, Node parent, bool syncStartingChanges = true, string[] excludedProperties = null, bool replicateOnJoin = true)
+	{
+		if (excludedProperties == null) excludedProperties = new string[0];
+		return (Node)GDSYNC.Call("multiplayer_instantiate", scene, parent, syncStartingChanges, excludedProperties, replicateOnJoin);
+	}
 	#endregion
 
 
