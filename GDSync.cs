@@ -10,7 +10,7 @@ public partial class GDSync : Node
 	public static event Action Connected;
 	public static event Action<int> ConnectionFailed; //error
 	public static event Action Disconnected;
-	public static event Action<int> ClientIDChanged; //error
+	public static event Action<int> ClientIdChanged; //error
 	public static event Action<string> LobbyCreated;
 	public static event Action<string, int> LobbyCreationFailed; //lobby name | error
 	public static event Action<string> LobbyJoined; //lobby name
@@ -21,8 +21,13 @@ public partial class GDSync : Node
 	public static event Action<int> ClientLeft; //client ID
 	public static event Action<int, string, Variant> PlayerDataChanged; //client ID | key | value
 	public static event Action<Godot.Collections.Array> LobbiesReceived; //lobbies
+	public static event Action<Godot.Collections.Dictionary> LobbyReceived; //lobby
 	public static event Action<bool, int> HostChanged; //is host | host ID
 	public static event Action<string, Godot.Collections.Array> SyncedEventTriggered; //event name | parameters
+	public static event Action<string> ChangeSceneCalled; //scene path
+	public static event Action<string> ChangeSceneSuccess; //scene path
+	public static event Action<string> ChangeSceneFailed; //scene path
+	public static event Action<string, bool> SteamJoinRequest; //lobby name | has password
 
 	public override void _Ready()
 	{
@@ -32,19 +37,24 @@ public partial class GDSync : Node
 		GDSYNC.Connect("connected", Callable.From(() => { Connected?.Invoke(); }));
 		GDSYNC.Connect("connection_failed", Callable.From((int error) => { ConnectionFailed?.Invoke(error); }));
 		GDSYNC.Connect("disconnected", Callable.From(() => { Disconnected?.Invoke(); }));
-		GDSYNC.Connect("client_id_changed", Callable.From((int ownID) => { ClientIDChanged?.Invoke(ownID); }));
+		GDSYNC.Connect("client_id_changed", Callable.From((int ownID) => { ClientIdChanged?.Invoke(ownID); }));
 		GDSYNC.Connect("lobby_created", Callable.From((string lobbyName) => { LobbyCreated?.Invoke(lobbyName); }));
 		GDSYNC.Connect("lobby_creation_failed", Callable.From((string lobbyName, int error) => { LobbyCreationFailed?.Invoke(lobbyName, error); }));
 		GDSYNC.Connect("lobby_joined", Callable.From((string lobbyName) => { LobbyJoined?.Invoke(lobbyName); }));
 		GDSYNC.Connect("lobby_join_failed", Callable.From((string lobbyName, int error) => { LobbyJoinFailed?.Invoke(lobbyName, error); }));
 		GDSYNC.Connect("lobby_data_changed", Callable.From((string key, Variant value) => { LobbyDataChanged?.Invoke(key, value); }));
 		GDSYNC.Connect("lobby_tag_changed", Callable.From((string key, Variant value) => { LobbyTagChanged?.Invoke(key, value); }));
-		GDSYNC.Connect("client_joined", Callable.From((int clientID) => { ClientJoined?.Invoke(clientID); }));
-		GDSYNC.Connect("client_left", Callable.From((int clientID) => { ClientLeft?.Invoke(clientID); }));
-		GDSYNC.Connect("player_data_changed", Callable.From((int clientID, string key, Variant value) => { PlayerDataChanged?.Invoke(clientID, key, value); }));
+		GDSYNC.Connect("client_joined", Callable.From((int clientId) => { ClientJoined?.Invoke(clientId); }));
+		GDSYNC.Connect("client_left", Callable.From((int clientId) => { ClientLeft?.Invoke(clientId); }));
+		GDSYNC.Connect("player_data_changed", Callable.From((int clientId, string key, Variant value) => { PlayerDataChanged?.Invoke(clientId, key, value); }));
 		GDSYNC.Connect("lobbies_received", Callable.From((Godot.Collections.Array lobbies) => { LobbiesReceived?.Invoke(lobbies); }));
+		GDSYNC.Connect("lobby_received", Callable.From((Godot.Collections.Dictionary lobby) => { LobbyReceived?.Invoke(lobby); }));
 		GDSYNC.Connect("host_changed", Callable.From((bool isHost, int hostID) => { HostChanged?.Invoke(isHost, hostID); }));
 		GDSYNC.Connect("synced_event_triggered", Callable.From((string eventName, Godot.Collections.Array parameters) => { SyncedEventTriggered?.Invoke(eventName, parameters); }));
+		GDSYNC.Connect("change_scene_called", Callable.From((string scenePath) => { ChangeSceneCalled?.Invoke(scenePath); }));
+		GDSYNC.Connect("change_scene_success", Callable.From((string scenePath) => { ChangeSceneSuccess?.Invoke(scenePath); }));
+		GDSYNC.Connect("change_scene_failed", Callable.From((string scenePath) => { ChangeSceneFailed?.Invoke(scenePath); }));
+		GDSYNC.Connect("steam_join_request", Callable.From((string lobbyName, bool hasPassword) => { SteamJoinRequest?.Invoke(lobbyName, hasPassword); }));
 	}
 
 
@@ -60,6 +70,11 @@ public partial class GDSync : Node
 		GDSYNC.Call("start_multiplayer");
 	}
 
+	public static void StartLocalMultiplayer()
+	{
+		GDSYNC.Call("start_local_multiplayer");
+	}
+
 	public static void StopMultiplayer()
 	{
 		GDSYNC.Call("stop_multiplayer");
@@ -70,19 +85,14 @@ public partial class GDSync : Node
 		return (bool)GDSYNC.Call("is_active");
 	}
 
-	public static int GetClientID()
+	public static int GetClientId()
 	{
 		return (int)GDSYNC.Call("get_client_id");
 	}
 
-	public static int GetSenderID()
+	public static int GetSenderId()
 	{
 		return (int)GDSYNC.Call("get_sender_id");
-	}
-
-	public static Godot.Collections.Array GetAllClients()
-	{
-		return (Godot.Collections.Array)GDSYNC.Call("get_all_clients");
 	}
 
 	public static bool IsHost()
@@ -100,9 +110,9 @@ public partial class GDSync : Node
 		GDSYNC.Call("sync_var", node, variableName, reliable);
 	}
 
-	public static void SyncVarOn(int clientID, Node node, string variableName, bool reliable = true)
+	public static void SyncVarOn(int clientId, Node node, string variableName, bool reliable = true)
 	{
-		GDSYNC.Call("sync_var_on", clientID, node, variableName, reliable);
+		GDSYNC.Call("sync_var_on", clientId, node, variableName, reliable);
 	}
 
 	public static void CallFunc(Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
@@ -110,21 +120,26 @@ public partial class GDSync : Node
 		GDSYNC.Call("call_func", callable, parameters, reliable);
 	}
 
-	public static void CallFuncOn(int clientID, Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
+	public static void CallFuncOn(int clientId, Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
 	{
-		GDSYNC.Call("call_func_on", clientID, callable, parameters, reliable);
-	}
-
-	public static void CreateSyncedEvent(string eventName, float delay = 1.0f, Godot.Collections.Array parameters = null)
-	{
-		if (parameters == null) parameters = new Godot.Collections.Array();
-		GDSYNC.Call("create_synced_event", eventName, delay, parameters);
+		GDSYNC.Call("call_func_on", clientId, callable, parameters, reliable);
 	}
 
 	public static Node MultiplayerInstantiate(PackedScene scene, Node parent, bool syncStartingChanges = true, string[] excludedProperties = null, bool replicateOnJoin = true)
 	{
 		if (excludedProperties == null) excludedProperties = new string[0];
 		return (Node)GDSYNC.Call("multiplayer_instantiate", scene, parent, syncStartingChanges, excludedProperties, replicateOnJoin);
+	}
+
+	public static void SyncedEventCreate(string eventName, float delay = 1.0f, Godot.Collections.Array parameters = null)
+	{
+		if (parameters == null) parameters = new Godot.Collections.Array();
+		GDSYNC.Call("synced_event_create", eventName, delay, parameters);
+	}
+
+	public static void ChangeScene(string scenePath)
+	{
+		GDSYNC.Call("change_scene", scenePath);
 	}
 	#endregion
 
@@ -143,6 +158,16 @@ public partial class GDSync : Node
 		GDSYNC.Call("set_protection_mode", protectionEnabled);
 	}
 
+	public static void RegisterResource(Resource resource, string id)
+	{
+		GDSYNC.Call("register_resource", resource, id);
+	}
+
+	public static void DeregisterResource(Resource resource)
+	{
+		GDSYNC.Call("deregister_resource", resource);
+	}
+
 	public static void ExposeNode(Node node)
 	{
 		GDSYNC.Call("expose_node", node);
@@ -151,6 +176,16 @@ public partial class GDSync : Node
 	public static void HideNode(Node node)
 	{
 		GDSYNC.Call("hide_node", node);
+	}
+
+	public static void ExposeResource(Resource resource)
+	{
+		GDSYNC.Call("expose_resource", resource);
+	}
+
+	public static void HideResource(Resource resource)
+	{
+		GDSYNC.Call("hide_resource", resource);
 	}
 
 	public static void ExposeFunction(Callable callable)
@@ -222,101 +257,126 @@ public partial class GDSync : Node
 		GDSYNC.Call("get_public_lobbies");
 	}
 
-	public static void CreateLobby(string name, string password = "", bool isPublic = true, int playerLimit = 0, Godot.Collections.Dictionary tags = null, Godot.Collections.Dictionary data = null)
+	public static void GetPublicLobby(string lobbyName)
+	{
+		GDSYNC.Call("get_public_lobby", lobbyName);
+	}
+
+	public static void LobbyCreate(string name, string password = "", bool isPublic = true, int playerLimit = 0, Godot.Collections.Dictionary tags = null, Godot.Collections.Dictionary data = null)
 	{
 		if (tags == null) tags = new Godot.Collections.Dictionary();
 		if (data == null) data = new Godot.Collections.Dictionary();
-		GDSYNC.Call("create_lobby", name, password, isPublic, playerLimit, tags, data);
+		GDSYNC.Call("lobby_create", name, password, isPublic, playerLimit, tags, data);
 	}
 
-	public static void JoinLobby(string name, string password = "")
+	public static void LobbyJoin(string name, string password = "")
 	{
-		GDSYNC.Call("join_lobby", name, password);
+		GDSYNC.Call("lobby_join", name, password);
 	}
 
-	public static void CloseLobby()
+	public static void LobbyClose()
 	{
-		GDSYNC.Call("close_lobby");
+		GDSYNC.Call("lobby_close");
 	}
 
-	public static void OpenLobby()
+	public static void LobbyOpen()
 	{
-		GDSYNC.Call("open_lobby");
+		GDSYNC.Call("lobby_open");
 	}
 
-	public static void SetLobbyVisibility(bool isPublic)
+	public static void LobbySetVisibility(bool isPublic)
 	{
-		GDSYNC.Call("set_lobby_visibility", isPublic);
+		GDSYNC.Call("lobby_set_visibility", isPublic);
 	}
 
-	public static void LeaveLobby()
+	public static void LobbyChangePassword(string password)
 	{
-		GDSYNC.Call("leave_lobby");
+		GDSYNC.Call("lobby_change_password", password);
 	}
 
-	public static int GetLobbyPlayerCount()
+	public static void LobbyLeave()
 	{
-		return (int)GDSYNC.Call("get_lobby_player_count");
+		GDSYNC.Call("lobby_leave");
 	}
 
-	public static string GetLobbyName()
+	public static void LobbyKickClient(int clientId)
 	{
-		return (string)GDSYNC.Call("get_lobby_name");
+		GDSYNC.Call("lobby_kick_client", clientId);
 	}
 
-	public static int GetLobbyPlayerLimit()
+	public static Godot.Collections.Array LobbyGetAllClients()
 	{
-		return (int)GDSYNC.Call("get_lobby_player_limit");
+		return (Godot.Collections.Array)GDSYNC.Call("lobby_get_all_clients");
 	}
 
-	public static void SetLobbyTag(string key, Variant value)
+	public static int LobbyGetPlayerCount()
 	{
-		GDSYNC.Call("set_lobby_tag", key, value);
+		return (int)GDSYNC.Call("lobby_get_player_count");
 	}
 
-	public static void EraseLobbyTag(string key)
+	public static string LobbyGetName()
 	{
-		GDSYNC.Call("erase_lobby_tag", key);
+		return (string)GDSYNC.Call("lobby_get_name");
 	}
 
-	public static bool HasLobbyTag(string key)
+	public static int LobbyGetPlayerLimit()
 	{
-		return (bool)GDSYNC.Call("has_lobby_tag", key);
+		return (int)GDSYNC.Call("lobby_get_player_limit");
 	}
 
-	public static Variant GetLobbyTag(string key, Variant defaultValue = new Variant())
+	public static bool LobbyHasPassword()
 	{
-		return GDSYNC.Call("get_lobby_tag", key, defaultValue);
+		return (bool)GDSYNC.Call("lobby_has_password");
 	}
 
-	public static Godot.Collections.Dictionary GetAllLobbyTags()
+	public static void LobbySetTag(string key, Variant value)
 	{
-		return (Godot.Collections.Dictionary)GDSYNC.Call("get_all_lobby_tags");
+		GDSYNC.Call("lobby_set_tag", key, value);
 	}
 
-	public static void SetLobbyData(string key, Variant value)
+	public static void LobbyEraseTag(string key)
 	{
-		GDSYNC.Call("set_lobby_data", key, value);
+		GDSYNC.Call("lobby_erase_tag", key);
 	}
 
-	public static void EraseLobbyData(string key)
+	public static bool LobbyHasTag(string key)
 	{
-		GDSYNC.Call("erase_lobby_data", key);
+		return (bool)GDSYNC.Call("lobby_has_tag", key);
 	}
 
-	public static bool HasLobbyData(string key)
+	public static Variant LobbyGetTag(string key, Variant defaultValue = new Variant())
 	{
-		return (bool)GDSYNC.Call("has_lobby_data", key);
+		return GDSYNC.Call("lobby_get_tag", key, defaultValue);
 	}
 
-	public static Variant GetLobbyData(string key, Variant defaultValue = new Variant())
+	public static Godot.Collections.Dictionary LobbyGetAllTags()
 	{
-		return GDSYNC.Call("get_lobby_data", key, defaultValue);
+		return (Godot.Collections.Dictionary)GDSYNC.Call("lobby_get_all_tags");
 	}
 
-	public static Godot.Collections.Dictionary GetAllLobbyData()
+	public static void LobbySetData(string key, Variant value)
 	{
-		return (Godot.Collections.Dictionary)GDSYNC.Call("get_all_lobby_data");
+		GDSYNC.Call("lobby_set_data", key, value);
+	}
+
+	public static void LobbyEraseData(string key)
+	{
+		GDSYNC.Call("lobby_erase_data", key);
+	}
+
+	public static bool LobbyHasData(string key)
+	{
+		return (bool)GDSYNC.Call("lobby_has_data", key);
+	}
+
+	public static Variant LobbyGetData(string key, Variant defaultValue = new Variant())
+	{
+		return GDSYNC.Call("lobby_get_data", key, defaultValue);
+	}
+
+	public static Godot.Collections.Dictionary LobbyGetAllData()
+	{
+		return (Godot.Collections.Dictionary)GDSYNC.Call("lobby_get_all_data");
 	}
 	#endregion
 
@@ -325,29 +385,29 @@ public partial class GDSync : Node
 	// -----------------------------------------------------------------------------
 	#region Player Functions
 
-	public static void SetPlayerData(string key, Variant value)
+	public static void PlayerSetData(string key, Variant value)
 	{
-		GDSYNC.Call("set_player_data", key, value);
+		GDSYNC.Call("player_set_data", key, value);
 	}
 
-	public static void ErasePlayerData(string key)
+	public static void PlayerEraseData(string key)
 	{
-		GDSYNC.Call("erase_player_data", key);
+		GDSYNC.Call("player_erase_data", key);
 	}
 
-	public static Variant GetLobbyData(int clientID, string key, Variant defaultValue = new Variant())
+	public static Variant PlayerGetData(int clientId, string key, Variant defaultValue = new Variant())
 	{
-		return GDSYNC.Call("get_player_data", clientID, key, defaultValue);
+		return GDSYNC.Call("player_get_data", clientId, key, defaultValue);
 	}
 
-	public static Godot.Collections.Dictionary GetAllPlayerData(int clientID)
+	public static Godot.Collections.Dictionary PlayerGetAllData(int clientId)
 	{
-		return (Godot.Collections.Dictionary)GDSYNC.Call("get_all_player_data", clientID);
+		return (Godot.Collections.Dictionary)GDSYNC.Call("player_get_all_data", clientId);
 	}
 
-	public static void SetPlayerUsername(string username)
+	public static void PlayerSetUsername(string username)
 	{
-		GDSYNC.Call("set_player_username", username);
+		GDSYNC.Call("player_set_username", username);
 	}
 	#endregion
 
@@ -356,207 +416,284 @@ public partial class GDSync : Node
 	// -----------------------------------------------------------------------------
 	#region Accounts & Persistent Data Storage
 
-	public static async Task<ACCOUNT_CREATION_RESPONSE_CODE> CreateAccount(string email, string username, string password)
+	public static async Task<ACCOUNT_CREATION_RESPONSE_CODE> AccountCreate(string email, string username, string password)
 	{
-		var asyncRequest = GDSYNC.Call("create_account", email, username, password).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_create", email, username, password).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (ACCOUNT_CREATION_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<ACCOUNT_DELETION_RESPONSE_CODE> DeleteAccount(string email, string password)
+	public static async Task<ACCOUNT_DELETION_RESPONSE_CODE> AccountDelete(string email, string password)
 	{
-		var asyncRequest = GDSYNC.Call("delete_account", email, password).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_delete", email, password).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (ACCOUNT_DELETION_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<ACCOUNT_VERIFICATION_RESPONSE_CODE> VerifyAccount(string email, string code, float validTime = 86400)
+	public static async Task<ACCOUNT_VERIFICATION_RESPONSE_CODE> AccountVerify(string email, string code, float validTime = 86400)
 	{
-		var asyncRequest = GDSYNC.Call("verify_account", email, code, validTime).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_verify", email, code, validTime).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (ACCOUNT_VERIFICATION_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<RESEND_VERIFICATION_RESPONSE_CODE> ResendVerificationEmail(string email, string password)
+	public static async Task<ACCOUNT_RESEND_VERIFICATION_RESPONSE_CODE> AccountResendVerificationEmail(string email, string password)
 	{
-		var asyncRequest = GDSYNC.Call("resend_verification_code", email, password).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_resend_verification_code", email, password).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (RESEND_VERIFICATION_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_RESEND_VERIFICATION_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> IsVerified(string username = "")
+	public static async Task<Godot.Collections.Dictionary> AccountIsVerified(string username = "")
 	{
-		var asyncRequest = GDSYNC.Call("is_verified", username).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_is_verified", username).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> Login(string email, string password, float validTime = 86400)
+	public static async Task<Godot.Collections.Dictionary> AccountLogin(string email, string password, float validTime = 86400)
 	{
-		var asyncRequest = GDSYNC.Call("login", email, password, validTime).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_login", email, password, validTime).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> LoginFromSession(float validTime = 86400)
+	public static async Task<Godot.Collections.Dictionary> AccountLoginFromSession(float validTime = 86400)
 	{
-		var asyncRequest = GDSYNC.Call("login_from_session", validTime).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_login_from_session", validTime).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<LOGOUT_RESPONSE_CODE> Logout()
+	public static async Task<ACCOUNT_LOGOUT_RESPONSE_CODE> AccountLogout()
 	{
-		var asyncRequest = GDSYNC.Call("logout").AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_logout").AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (LOGOUT_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_LOGOUT_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<CHANGE_USERNAME_RESPONSE_CODE> ChangeAccountUsername(string newUsername)
+	public static async Task<ACCOUNT_BAN_RESPONSE_CODE> AccountBan(float banDuration)
 	{
-		var asyncRequest = GDSYNC.Call("change_account_username", newUsername).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_ban", banDuration).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (CHANGE_USERNAME_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_BAN_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<CHANGE_PASSWORD_RESPONSE_CODE> ChangeAccountPassword(string email, string password, string newPassword)
+	public static async Task<ACCOUNT_CHANGE_USERNAME_RESPONSE_CODE> AccountChangeAccountUsername(string newUsername)
 	{
-		var asyncRequest = GDSYNC.Call("change_account_password", email, password, newPassword).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_change_username", newUsername).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (CHANGE_PASSWORD_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_CHANGE_USERNAME_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<REQUEST_PASSWORD_RESET_RESPONSE_CODE> RequestPasswordReset(string email)
+	public static async Task<ACCOUNT_CHANGE_PASSWORD_RESPONSE_CODE> AccountChangeAccountPassword(string email, string password, string newPassword)
 	{
-		var asyncRequest = GDSYNC.Call("request_account_password_reset", email).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_change_password", email, password, newPassword).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (REQUEST_PASSWORD_RESET_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_CHANGE_PASSWORD_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<RESET_PASSWORD_RESPONSE_CODE> ResetPassword(string email, string resetCode, string newPassword)
+	public static async Task<ACCOUNT_REQUEST_PASSWORD_RESET_RESPONSE_CODE> AccountRequestPasswordReset(string email)
 	{
-		var asyncRequest = GDSYNC.Call("reset_password", email, resetCode, newPassword).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_request_password_reset", email).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (RESET_PASSWORD_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_REQUEST_PASSWORD_RESET_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<REPORT_USER_RESPONSE_CODE> ReportAccount(string usernameToReport, string report)
+	public static async Task<ACCOUNT_RESET_PASSWORD_RESPONSE_CODE> AccountResetPassword(string email, string resetCode, string newPassword)
 	{
-		var asyncRequest = GDSYNC.Call("report_account", usernameToReport, report).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_reset_password", email, resetCode, newPassword).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (REPORT_USER_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_RESET_PASSWORD_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<SET_PLAYER_DOCUMENT_RESPONSE_CODE> SetPlayerDocument(string path, Godot.Collections.Dictionary document, bool externallyVisible = false)
+	public static async Task<ACCOUNT_CREATE_REPORT_RESPONSE_CODE> AccountCreateReport(string usernameToReport, string report)
 	{
-		var asyncRequest = GDSYNC.Call("set_player_document", path, document, externallyVisible).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_create_report", usernameToReport, report).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (SET_PLAYER_DOCUMENT_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_CREATE_REPORT_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<SET_EXTERNAL_VISIBLE_RESPONSE_CODE> SetExternallyVisible(string path, bool externallyVisible = false)
+	public static async Task<ACCOUNT_SEND_FRIEND_REQUEST_RESPONSE_CODE> AccountSendFriendRequest(string friend)
 	{
-		var asyncRequest = GDSYNC.Call("set_external_visible", path, externallyVisible).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_send_friend_request", friend).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (SET_EXTERNAL_VISIBLE_RESPONSE_CODE)(int)result[0];
+		return (ACCOUNT_SEND_FRIEND_REQUEST_RESPONSE_CODE)(int)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> GetPlayerDocument(string path)
+	public static async Task<ACCOUNT_ACCEPT_FRIEND_REQUEST_RESPONSE_CODE> AccountAcceptFriendRequest(string friend)
 	{
-		var asyncRequest = GDSYNC.Call("get_player_document", path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_accept_friend_request", friend).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_ACCEPT_FRIEND_REQUEST_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<ACCOUNT_REMOVE_FRIEND_RESPONSE_CODE> AccountRemoveFriend(string friend)
+	{
+		var asyncRequest = GDSYNC.Call("account_remove_friend", friend).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_REMOVE_FRIEND_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<Godot.Collections.Dictionary> AccountGetFriendStatus(string friend)
+	{
+		var asyncRequest = GDSYNC.Call("account_get_friend_status", friend).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> HasPlayerDocument(string path)
+	public static async Task<Godot.Collections.Dictionary> AccountGetFriends(string friend)
 	{
-		var asyncRequest = GDSYNC.Call("has_player_document", path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_get_friends", friend).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> BrowsePlayerCollection(string path)
+	public static async Task<ACCOUNT_DOCUMENT_SET_RESPONSE_CODE> AccountDocumentSet(string path, Godot.Collections.Dictionary document, bool externallyVisible = false)
 	{
-		var asyncRequest = GDSYNC.Call("browse_player_collection", path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_document_set", path, document, externallyVisible).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_DOCUMENT_SET_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<ACCOUNT_DOCUMENT_SET_EXTERNAL_VISIBLE_RESPONSE_CODE> AccountDocumentSetExternalVisible(string path, bool externallyVisible = false)
+	{
+		var asyncRequest = GDSYNC.Call("account_document_set_external_visible", path, externallyVisible).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_DOCUMENT_SET_EXTERNAL_VISIBLE_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<Godot.Collections.Dictionary> AccountGetDocument(string path)
+	{
+		var asyncRequest = GDSYNC.Call("account_get_document", path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<DELETE_PLAYER_DOCUMENT_RESPONSE_CODE> DeletePlayerDocument(string path)
+	public static async Task<Godot.Collections.Dictionary> AccountHasDocument(string path)
 	{
-		var asyncRequest = GDSYNC.Call("delete_player_document", path).AsGodotObject();
-		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (DELETE_PLAYER_DOCUMENT_RESPONSE_CODE)(int)result[0];
-	}
-
-	public static async Task<Godot.Collections.Dictionary> GetExternalPlayerDocument(string externalUsername, string path)
-	{
-		var asyncRequest = GDSYNC.Call("get_external_player_document", externalUsername, path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_has_document", path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> HasExternalPlayerDocument(string externalUsername, string path)
+	public static async Task<Godot.Collections.Dictionary> AccountBrowseCollection(string path)
 	{
-		var asyncRequest = GDSYNC.Call("has_external_player_document", externalUsername, path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_browse_collection", path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> BrowseExternalPlayerCollection(string externalUsername, string path)
+	public static async Task<ACCOUNT_DELETE_DOCUMENT_RESPONSE_CODE> AccountDeleteDocument(string path)
 	{
-		var asyncRequest = GDSYNC.Call("browse_external_player_collection", externalUsername, path).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_delete_document", path).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_DELETE_DOCUMENT_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<Godot.Collections.Dictionary> AccountGetExternalDocument(string externalUsername, string path)
+	{
+		var asyncRequest = GDSYNC.Call("account_get_external_document", externalUsername, path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> HasLeaderboard(string leaderboard)
+	public static async Task<Godot.Collections.Dictionary> AccountHasExternalDocument(string externalUsername, string path)
 	{
-		var asyncRequest = GDSYNC.Call("has_leaderboard", leaderboard).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_has_external_document", externalUsername, path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> GetLeaderboards()
+	public static async Task<Godot.Collections.Dictionary> AccountBrowseExternalCollection(string externalUsername, string path)
 	{
-		var asyncRequest = GDSYNC.Call("get_leaderboards").AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_browse_external_collection", externalUsername, path).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> BrowseLeaderboard(string leaderboard, int pageSize, int page)
+	public static async Task<Godot.Collections.Dictionary> LeaderboardExists(string leaderboard)
 	{
-		var asyncRequest = GDSYNC.Call("browse_leaderboard", leaderboard, pageSize, page).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("leaderboard_exists", leaderboard).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> GetLeaderboardScore(string leaderboard, string username)
+	public static async Task<Godot.Collections.Dictionary> LeaderboardGetAll()
 	{
-		var asyncRequest = GDSYNC.Call("get_leaderboard_score", leaderboard, username).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("leaderboard_get_all").AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<SUBMIT_SCORE_RESPONSE_CODE> SubmitScore(string leaderboard, int score)
+	public static async Task<Godot.Collections.Dictionary> LeaderboardBrowseScores(string leaderboard, int pageSize, int page)
 	{
-		var asyncRequest = GDSYNC.Call("submit_score", leaderboard, score).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("leaderboard_browse_scores", leaderboard, pageSize, page).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (SUBMIT_SCORE_RESPONSE_CODE)(int)result[0];
+		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<SUBMIT_SCORE_RESPONSE_CODE> DeleteScore(string leaderboard)
+	public static async Task<Godot.Collections.Dictionary> LeaderboardGetScore(string leaderboard, string username)
 	{
-		var asyncRequest = GDSYNC.Call("delete_score", leaderboard).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("leaderboard_get_score", leaderboard, username).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (SUBMIT_SCORE_RESPONSE_CODE)(int)result[0];
+		return (Godot.Collections.Dictionary)result[0];
+	}
+
+	public static async Task<LEADERBOARD_SUBMIT_SCORE_RESPONSE_CODE> LeaderboardSubmitScore(string leaderboard, int score)
+	{
+		var asyncRequest = GDSYNC.Call("leaderboard_submit_score", leaderboard, score).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (LEADERBOARD_SUBMIT_SCORE_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<LEADERBOARD_DELETE_SCORE_RESPONSE_CODE> LeaderboardDeleteScore(string leaderboard)
+	{
+		var asyncRequest = GDSYNC.Call("leaderboard_delete_score", leaderboard).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (LEADERBOARD_DELETE_SCORE_RESPONSE_CODE)(int)result[0];
 	}
 	#endregion
 
 
 
+
+	#region Steam Integration
+	public static async Task<bool> SteamIntegrationEnabled()
+	{
+		var asyncRequest = GDSYNC.Call("steam_integration_enabled").AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (bool)result[0];
+	}
+
+	public static async Task<LINK_STEAM_ACCOUNT_RESPONSE_CODE> SteamLinkAccount()
+	{
+		var asyncRequest = GDSYNC.Call("steam_link_account").AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (LINK_STEAM_ACCOUNT_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<UNLINK_STEAM_ACCOUNT_RESPONSE_CODE> SteamUnlinkAccount()
+	{
+		var asyncRequest = GDSYNC.Call("steam_unlink_account").AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (UNLINK_STEAM_ACCOUNT_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<Godot.Collections.Dictionary> SteamLogin(float validTime = 86400)
+	{
+		var asyncRequest = GDSYNC.Call("steam_login").AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (Godot.Collections.Dictionary)result[0];
+	}
+
+
+	#endregion
+
+
+
 	#region enums
-	private enum CONNECTION_STATUS
+	public enum CONNECTION_STATUS
 	{
 		LOBBY_SWITCH = -1,
 		DISABLED,
@@ -565,9 +702,10 @@ public partial class GDSync : Node
 		CONNECTING,
 		CONNECTED,
 		CONNECTION_SECURED,
+		LOCAL_CONNECTION
 	}
 
-	private enum PACKET_CHANNEL
+	public enum PACKET_CHANNEL
 	{
 		SETUP,
 		SERVER,
@@ -576,7 +714,7 @@ public partial class GDSync : Node
 		INTERNAL,
 	}
 
-	private enum PACKET_VALUE
+	public enum PACKET_VALUE
 	{
 		PADDING,
 		CLIENT_REQUESTS,
@@ -584,7 +722,7 @@ public partial class GDSync : Node
 		INTERNAL_REQUESTS,
 	}
 
-	private enum REQUEST_TYPE
+	public enum REQUEST_TYPE
 	{
 		VALIDATE_KEY,
 		SECURE_CONNECTION,
@@ -616,19 +754,13 @@ public partial class GDSync : Node
 		ERASE_PLAYER_DATA,
 		SET_CONNECT_TIME,
 		SET_SETTING,
-		CREATE_ACCOUNT,
-		DELETE_ACCOUNT,
-		VERIFY_ACCOUNT,
-		LOGIN,
-		LOGIN_FROM_SESSION,
-		LOGOUT,
-		SET_PLAYER_DOCUMENT,
-		HAS_PLAYER_DOCUMENT,
-		GET_PLAYER_DOCUMENT,
-		DELETE_PLAYER_DOCUMENT,
+		SET_CLIENT_ID,
+		KICK_PLAYER,
+		CHANGE_PASSWORD,
+		GET_PUBLIC_LOBBY
 	}
 
-	private enum MESSAGE_TYPE
+	public enum MESSAGE_TYPE
 	{
 		CRITICAL_ERROR,
 		CLIENT_ID_RECEIVED,
@@ -656,15 +788,17 @@ public partial class GDSync : Node
 		SET_CONNECT_TIME,
 		SET_SENDER_ID,
 		SET_DATA_USAGE,
+		KICKED,
+		LOBBY_RECEIVED
 	}
 
-	private enum SETTING
+	public enum SETTING
 	{
 		API_VERSION,
 		USE_SENDER_ID,
 	}
 
-	private enum DATA
+	public enum DATA
 	{
 		REQUEST_TYPE,
 		NAME,
@@ -672,7 +806,7 @@ public partial class GDSync : Node
 		TARGET_CLIENT = 3,
 	}
 
-	private enum LOBBY_DATA
+	public enum LOBBY_DATA
 	{
 		NAME = 1,
 		PASSWORD = 2,
@@ -681,21 +815,21 @@ public partial class GDSync : Node
 		VALUE = 2,
 	}
 
-	private enum FUNCTION_DATA
+	public enum FUNCTION_DATA
 	{
 		NODE_PATH = 1,
 		NAME = 2,
 		PARAMETERS = 4
 	}
 
-	private enum VAR_DATA
+	public enum VAR_DATA
 	{
 		NODE_PATH = 1,
 		NAME = 2,
 		VALUE = 4
 	}
 
-	private enum MESSAGE_DATA
+	public enum MESSAGE_DATA
 	{
 		TYPE = 1,
 		VALUE = 2,
@@ -711,7 +845,7 @@ public partial class GDSync : Node
 		REQUEST_TOO_LARGE,
 	}
 
-	private enum INTERNAL_MESSAGE
+	public enum INTERNAL_MESSAGE
 	{
 		LOBBY_UPDATED,
 		LOBBY_DELETED,
@@ -723,6 +857,7 @@ public partial class GDSync : Node
 	{
 		INVALID_PUBLIC_KEY,
 		TIMEOUT,
+		LOCAL_PORT_ERROR,
 	}
 
 	public enum LOBBY_CREATION_ERROR
@@ -734,6 +869,7 @@ public partial class GDSync : Node
 		TAGS_TOO_LARGE,
 		DATA_TOO_LARGE,
 		ON_COOLDOWN,
+		LOCAL_PORT_ERROR,
 	}
 
 	public enum LOBBY_JOIN_ERROR
@@ -789,7 +925,7 @@ public partial class GDSync : Node
 		EMAIL_OR_PASSWORD_INCORRECT,
 	}
 
-	public enum RESEND_VERIFICATION_RESPONSE_CODE
+	public enum ACCOUNT_RESEND_VERIFICATION_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -816,7 +952,7 @@ public partial class GDSync : Node
 		BANNED,
 	}
 
-	public enum IS_VERIFIED_RESPONSE_CODE
+	public enum ACCOUNT_IS_VERIFIED_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -827,7 +963,7 @@ public partial class GDSync : Node
 		USER_DOESNT_EXIST,
 	}
 
-	public enum LOGIN_RESPONSE_CODE
+	public enum ACCOUNT_LOGIN_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -840,7 +976,7 @@ public partial class GDSync : Node
 		BANNED,
 	}
 
-	public enum LOGOUT_RESPONSE_CODE
+	public enum ACCOUNT_LOGOUT_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -850,7 +986,7 @@ public partial class GDSync : Node
 		NOT_LOGGED_IN,
 	}
 
-	public enum CHANGE_PASSWORD_RESPONSE_CODE
+	public enum ACCOUNT_CHANGE_PASSWORD_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -863,7 +999,7 @@ public partial class GDSync : Node
 		BANNED,
 	}
 
-	public enum CHANGE_USERNAME_RESPONSE_CODE
+	public enum ACCOUNT_CHANGE_USERNAME_RESPONSE_CODE
 	{
 
 		SUCCESS,
@@ -879,7 +1015,7 @@ public partial class GDSync : Node
 		INVALID_USERNAME
 	}
 
-	public enum RESET_PASSWORD_RESPONSE_CODE
+	public enum ACCOUNT_RESET_PASSWORD_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -890,7 +1026,7 @@ public partial class GDSync : Node
 		CODE_EXPIRED,
 	}
 
-	public enum REQUEST_PASSWORD_RESET_RESPONSE_CODE
+	public enum ACCOUNT_REQUEST_PASSWORD_RESET_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -902,7 +1038,7 @@ public partial class GDSync : Node
 		BANNED,
 	}
 
-	public enum SET_PLAYER_DOCUMENT_RESPONSE_CODE
+	public enum ACCOUNT_DOCUMENT_SET_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -913,7 +1049,7 @@ public partial class GDSync : Node
 		STORAGE_FULL,
 	}
 
-	public enum GET_PLAYER_DOCUMENT_RESPONSE_CODE
+	public enum ACCOUNT_GET_DOCUMENT_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -924,7 +1060,7 @@ public partial class GDSync : Node
 		DOESNT_EXIST,
 	}
 
-	public enum BROWSE_PLAYER_COLLECTION_RESPONSE_CODE
+	public enum ACCOUNT_BROWSE_COLLECTION_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -935,7 +1071,7 @@ public partial class GDSync : Node
 		DOESNT_EXIST,
 	}
 
-	public enum SET_EXTERNAL_VISIBLE_RESPONSE_CODE
+	public enum ACCOUNT_DOCUMENT_SET_EXTERNAL_VISIBLE_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -947,7 +1083,7 @@ public partial class GDSync : Node
 	}
 
 
-	public enum HAS_PLAYER_DOCUMENT_RESPONSE_CODE
+	public enum ACCOUNT_HAS_DOCUMENT_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -957,7 +1093,7 @@ public partial class GDSync : Node
 		NOT_LOGGED_IN,
 	}
 
-	public enum DELETE_PLAYER_DOCUMENT_RESPONSE_CODE
+	public enum ACCOUNT_DELETE_DOCUMENT_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -968,7 +1104,7 @@ public partial class GDSync : Node
 		DOESNT_EXIST,
 	}
 
-	public enum REPORT_USER_RESPONSE_CODE
+	public enum ACCOUNT_CREATE_REPORT_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -982,7 +1118,7 @@ public partial class GDSync : Node
 		USER_DOESNT_EXIST,
 	}
 
-	public enum SUBMIT_SCORE_RESPONSE_CODE
+	public enum LEADERBOARD_SUBMIT_SCORE_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -994,7 +1130,7 @@ public partial class GDSync : Node
 		LEADERBOARD_DOESNT_EXIST
 	}
 
-	public enum DELETE_SCORE_RESPONSE_CODE
+	public enum LEADERBOARD_DELETE_SCORE_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -1005,7 +1141,7 @@ public partial class GDSync : Node
 		LEADERBOARD_DOESNT_EXIST
 	}
 
-	public enum GET_LEADERBOARDS_RESPONSE_CODE
+	public enum LEADERBOARD_GET_ALL_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -1015,7 +1151,7 @@ public partial class GDSync : Node
 		NOT_LOGGED_IN
 	}
 
-	public enum HAS_LEADERBOARD_RESPONSE_CODE
+	public enum LEADERBOARD_EXISTS_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -1025,7 +1161,7 @@ public partial class GDSync : Node
 		NOT_LOGGED_IN
 	}
 
-	public enum BROWSE_LEADERBOARD_RESPONSE_CODE
+	public enum LEADERBOARD_BROWSE_SCORES_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -1036,7 +1172,7 @@ public partial class GDSync : Node
 		LEADERBOARD_DOESNT_EXIST
 	}
 
-	public enum GET_LEADERBOARD_SCORE_RESPONSE_CODE
+	public enum LEADERBOARD_GET_SCORE_RESPONSE_CODE
 	{
 		SUCCESS,
 		NO_RESPONSE_FROM_SERVER,
@@ -1047,5 +1183,119 @@ public partial class GDSync : Node
 		LEADERBOARD_DOESNT_EXIST,
 		USER_DOESNT_EXIST
 	}
+
+	public enum ACCOUNT_SEND_FRIEND_REQUEST_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STORAGE_FULL,
+		USER_DOESNT_EXIST,
+		FRIEND_ALREADY_ADDED,
+		FRIENDS_LIST_FULL,
+	}
+
+	public enum ACCOUNT_ACCEPT_FRIEND_REQUEST_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STORAGE_FULL,
+		FRIEND_NOT_FOUND,
+	}
+
+	public enum ACCOUNT_REMOVE_FRIEND_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STORAGE_FULL,
+		FRIEND_DOESNT_EXIST,
+	}
+
+	public enum ACCOUNT_GET_FRIENDS_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+	}
+
+	public enum ACCOUNT_GET_FRIEND_STATUS_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		USER_DOESNT_EXIST,
+	}
+
+	public enum FRIEND_STATUS
+	{
+		NONE,
+		PENDING,
+		FRIEND
+	}
+
+	public enum LINK_STEAM_ACCOUNT_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		ALREADY_LINKED,
+		STEAM_ERROR,
+	}
+
+	public enum UNLINK_STEAM_ACCOUNT_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STEAM_ERROR,
+	}
+
+	public enum STEAM_LOGIN_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		STEAM_ERROR,
+		NOT_LINKED,
+		NOT_VERIFIED,
+		BANNED,
+	}
+
+	public enum ACCOUNT_BAN_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STORAGE_FULL,
+	}
+
 	#endregion
 }
