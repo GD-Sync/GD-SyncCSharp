@@ -11,8 +11,10 @@ public partial class GDSync : Node
 	public static event Action<int> ConnectionFailed; //error
 	public static event Action Disconnected;
 	public static event Action<int> ClientIdChanged; //error
-	public static event Action<string> LobbyCreated;
+	public static event Action<string> LobbyCreated; //lobby name
 	public static event Action<string, int> LobbyCreationFailed; //lobby name | error
+	public static event Action<string> LobbyNameChanged; //lobby name
+	public static event Action<string, int> LobbyNameChangeFailed; //lobby name | error
 	public static event Action<string> LobbyJoined; //lobby name
 	public static event Action<string, int> LobbyJoinFailed; //lobby name | error
 	public static event Action<string, Variant> LobbyDataChanged; //key | value
@@ -20,6 +22,7 @@ public partial class GDSync : Node
 	public static event Action<int> ClientJoined; //client ID
 	public static event Action<int> ClientLeft; //client ID
 	public static event Action<int, string, Variant> PlayerDataChanged; //client ID | key | value
+	public static event Action Kicked;
 	public static event Action<Godot.Collections.Array> LobbiesReceived; //lobbies
 	public static event Action<Godot.Collections.Dictionary> LobbyReceived; //lobby
 	public static event Action<bool, int> HostChanged; //is host | host ID
@@ -40,6 +43,8 @@ public partial class GDSync : Node
 		GDSYNC.Connect("client_id_changed", Callable.From((int ownID) => { ClientIdChanged?.Invoke(ownID); }));
 		GDSYNC.Connect("lobby_created", Callable.From((string lobbyName) => { LobbyCreated?.Invoke(lobbyName); }));
 		GDSYNC.Connect("lobby_creation_failed", Callable.From((string lobbyName, int error) => { LobbyCreationFailed?.Invoke(lobbyName, error); }));
+		GDSYNC.Connect("lobby_name_changed", Callable.From((string lobbyName) => { LobbyNameChanged?.Invoke(lobbyName); }));
+		GDSYNC.Connect("lobby_name_change_failed", Callable.From((string lobbyName, int error) => { LobbyNameChangeFailed?.Invoke(lobbyName, error); }));
 		GDSYNC.Connect("lobby_joined", Callable.From((string lobbyName) => { LobbyJoined?.Invoke(lobbyName); }));
 		GDSYNC.Connect("lobby_join_failed", Callable.From((string lobbyName, int error) => { LobbyJoinFailed?.Invoke(lobbyName, error); }));
 		GDSYNC.Connect("lobby_data_changed", Callable.From((string key, Variant value) => { LobbyDataChanged?.Invoke(key, value); }));
@@ -47,6 +52,7 @@ public partial class GDSync : Node
 		GDSYNC.Connect("client_joined", Callable.From((int clientId) => { ClientJoined?.Invoke(clientId); }));
 		GDSYNC.Connect("client_left", Callable.From((int clientId) => { ClientLeft?.Invoke(clientId); }));
 		GDSYNC.Connect("player_data_changed", Callable.From((int clientId, string key, Variant value) => { PlayerDataChanged?.Invoke(clientId, key, value); }));
+		GDSYNC.Connect("kicked", Callable.From(() => { Kicked?.Invoke(); }));
 		GDSYNC.Connect("lobbies_received", Callable.From((Godot.Collections.Array lobbies) => { LobbiesReceived?.Invoke(lobbies); }));
 		GDSYNC.Connect("lobby_received", Callable.From((Godot.Collections.Dictionary lobby) => { LobbyReceived?.Invoke(lobby); }));
 		GDSYNC.Connect("host_changed", Callable.From((bool isHost, int hostID) => { HostChanged?.Invoke(isHost, hostID); }));
@@ -70,6 +76,11 @@ public partial class GDSync : Node
 		GDSYNC.Call("start_multiplayer");
 	}
 
+	public static void Quit()
+	{
+		GDSYNC.Call("quit");
+	}
+
 	public static void StartLocalMultiplayer()
 	{
 		GDSYNC.Call("start_local_multiplayer");
@@ -90,6 +101,13 @@ public partial class GDSync : Node
 		return (int)GDSYNC.Call("get_client_id");
 	}
 
+	public static async Task<float> GetClientPing(int clientId)
+	{
+		var asyncRequest = GDSYNC.Call("get_client_ping", clientId).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (float)result[0];
+	}
+
 	public static int GetSenderId()
 	{
 		return (int)GDSYNC.Call("get_sender_id");
@@ -105,14 +123,19 @@ public partial class GDSync : Node
 		return (int)GDSYNC.Call("get_host");
 	}
 
-	public static void SyncVar(Node node, string variableName, bool reliable = true)
+	public static void SetHost(int clientId)
 	{
-		GDSYNC.Call("sync_var", node, variableName, reliable);
+		GDSYNC.Call("set_host", clientId);
 	}
 
-	public static void SyncVarOn(int clientId, Node node, string variableName, bool reliable = true)
+	public static void SyncVar(GodotObject godotObject, string variableName, bool reliable = true)
 	{
-		GDSYNC.Call("sync_var_on", clientId, node, variableName, reliable);
+		GDSYNC.Call("sync_var", godotObject, variableName, reliable);
+	}
+
+	public static void SyncVarOn(int clientId, GodotObject godotObject, string variableName, bool reliable = true)
+	{
+		GDSYNC.Call("sync_var_on", clientId, godotObject, variableName, reliable);
 	}
 
 	public static void CallFunc(Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
@@ -125,10 +148,25 @@ public partial class GDSync : Node
 		GDSYNC.Call("call_func_on", clientId, callable, parameters, reliable);
 	}
 
+	public static void CallFuncAll(Callable callable, Godot.Collections.Array parameters = null, bool reliable = true)
+	{
+		GDSYNC.Call("call_func_all", callable, parameters, reliable);
+	}
+
 	public static Node MultiplayerInstantiate(PackedScene scene, Node parent, bool syncStartingChanges = true, string[] excludedProperties = null, bool replicateOnJoin = true)
 	{
 		if (excludedProperties == null) excludedProperties = new string[0];
 		return (Node)GDSYNC.Call("multiplayer_instantiate", scene, parent, syncStartingChanges, excludedProperties, replicateOnJoin);
+	}
+
+	public static void MultiplayerQueueFree(Node node)
+	{
+		GDSYNC.Call("multiplayer_queue_free", node);
+	}
+
+	public static float GetMultiplayerTime()
+	{
+		return (float)GDSYNC.Call("get_multiplayer_time");
 	}
 
 	public static void SyncedEventCreate(string eventName, float delay = 1.0f, Godot.Collections.Array parameters = null)
@@ -198,14 +236,14 @@ public partial class GDSync : Node
 		GDSYNC.Call("hide_function", callable);
 	}
 
-	public static void ExposeVar(Node node, string variableName)
+	public static void ExposeVar(GodotObject godotObject, string variableName)
 	{
-		GDSYNC.Call("expose_var", node, variableName);
+		GDSYNC.Call("expose_var", godotObject, variableName);
 	}
 
-	public static void HideVar(Node node, string variableName)
+	public static void HideVar(GodotObject godotObject, string variableName)
 	{
-		GDSYNC.Call("hide_var", node, variableName);
+		GDSYNC.Call("hide_var", godotObject, variableName);
 	}
 	#endregion
 
@@ -287,6 +325,11 @@ public partial class GDSync : Node
 	public static void LobbySetVisibility(bool isPublic)
 	{
 		GDSYNC.Call("lobby_set_visibility", isPublic);
+	}
+
+	public static void LobbyChangeName(string name)
+	{
+		GDSYNC.Call("lobby_change_name", name);
 	}
 
 	public static void LobbyChangePassword(string password)
@@ -458,11 +501,18 @@ public partial class GDSync : Node
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> AccountLoginFromSession(float validTime = 86400)
+	public static async Task<ACCOUNT_BAN_RESPONSE_CODE> AccountBan(float banDuration)
+	{
+		var asyncRequest = GDSYNC.Call("account_ban", banDuration).AsGodotObject();
+		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
+		return (ACCOUNT_BAN_RESPONSE_CODE)(int)result[0];
+	}
+
+	public static async Task<ACCOUNT_LOGIN_RESPONSE_CODE> AccountLoginFromSession(float validTime = 86400)
 	{
 		var asyncRequest = GDSYNC.Call("account_login_from_session", validTime).AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (Godot.Collections.Dictionary)result[0];
+		return (ACCOUNT_LOGIN_RESPONSE_CODE)(int)result[0];
 	}
 
 	public static async Task<ACCOUNT_LOGOUT_RESPONSE_CODE> AccountLogout()
@@ -470,13 +520,6 @@ public partial class GDSync : Node
 		var asyncRequest = GDSYNC.Call("account_logout").AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (ACCOUNT_LOGOUT_RESPONSE_CODE)(int)result[0];
-	}
-
-	public static async Task<ACCOUNT_BAN_RESPONSE_CODE> AccountBan(float banDuration)
-	{
-		var asyncRequest = GDSYNC.Call("account_ban", banDuration).AsGodotObject();
-		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (ACCOUNT_BAN_RESPONSE_CODE)(int)result[0];
 	}
 
 	public static async Task<ACCOUNT_CHANGE_USERNAME_RESPONSE_CODE> AccountChangeAccountUsername(string newUsername)
@@ -542,9 +585,9 @@ public partial class GDSync : Node
 		return (Godot.Collections.Dictionary)result[0];
 	}
 
-	public static async Task<Godot.Collections.Dictionary> AccountGetFriends(string friend)
+	public static async Task<Godot.Collections.Dictionary> AccountGetFriends()
 	{
-		var asyncRequest = GDSYNC.Call("account_get_friends", friend).AsGodotObject();
+		var asyncRequest = GDSYNC.Call("account_get_friends").AsGodotObject();
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return (Godot.Collections.Dictionary)result[0];
 	}
@@ -659,11 +702,9 @@ public partial class GDSync : Node
 
 
 	#region Steam Integration
-	public static async Task<bool> SteamIntegrationEnabled()
+	public static bool SteamIntegrationEnabled()
 	{
-		var asyncRequest = GDSYNC.Call("steam_integration_enabled").AsGodotObject();
-		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
-		return (bool)result[0];
+		return (bool)GDSYNC.Call("steam_integration_enabled");
 	}
 
 	public static async Task<LINK_STEAM_ACCOUNT_RESPONSE_CODE> SteamLinkAccount()
