@@ -110,6 +110,36 @@ public partial class GDSync : Node
 	/// <param name="lobby">A dictionary containing public lobby data. If the lobby was not found the dictionary will be empty.</param>
 	public static event Action<Dictionary> LobbyReceived;
 	/// <summary>
+	/// Emitted once the server accepted a request made with <see cref="StartMatchmaking"/>.
+	/// </summary>
+	public static event Action MatchmakingStarted;
+	/// <summary>
+	/// Emitted whenever the progress of the active matchmaking request changes.
+	/// </summary>
+	/// <param name="status">The new status. See <see cref="MATCHMAKING_STATUS"/> for possible values.</param>
+	/// <param name="details">Additional information about the current status, such as the amount of queued players.</param>
+	public static event Action<int, Dictionary> MatchmakingStatusChanged;
+	/// <summary>
+	/// Emitted when matchmaking found a lobby. The plugin joins that lobby automatically,
+	/// so <see cref="LobbyJoined"/> follows shortly after.
+	/// </summary>
+	/// <param name="lobbyName">The name of the lobby that was found.</param>
+	public static event Action<string> MatchmakingMatchFound;
+	/// <summary>
+	/// Emitted when matchmaking fails.
+	/// </summary>
+	/// <param name="error">The reason why matchmaking failed. See <see cref="MATCHMAKING_ERROR"/> for possible errors.</param>
+	public static event Action<int> MatchmakingFailed;
+	/// <summary>
+	/// Emitted after cancelling matchmaking using <see cref="CancelMatchmaking"/>.
+	/// </summary>
+	public static event Action MatchmakingCancelled;
+	/// <summary>
+	/// Emitted when the plugin failed to move this client to another server while joining a lobby.
+	/// </summary>
+	/// <param name="error">The reason why the switch failed. See <see cref="LOBBY_SWITCH_ERROR"/> for possible errors.</param>
+	public static event Action<int> LobbySwitchFailed;
+	/// <summary>
 	/// Emitted when the host of the current lobby changes. This might happen if the current host leaves or disconnects.
 	/// The server automatically decides which player is the host.
 	/// <para>Being the host does not do anything by itself, but is something that can help you when developing authoritative code.</para>
@@ -150,6 +180,18 @@ public partial class GDSync : Node
 	/// Emitted if you get kicked from the current lobby.
 	/// </summary>
 	public static event Action Kicked;
+	/// <summary>
+	/// Emitted if you get kicked from the current lobby, including the reason supplied by the host.
+	/// </summary>
+	public static event Action<string> KickedWithReason;
+	/// <summary>
+	/// Emitted after successfully logging into a GD-Sync account.
+	/// </summary>
+	public static event Action<string> AccountLoggedIn;
+	/// <summary>
+	/// Emitted after logging out of a GD-Sync account.
+	/// </summary>
+	public static event Action AccountLoggedOut;
 
 	public override void _Ready()
 	{
@@ -171,15 +213,27 @@ public partial class GDSync : Node
 		GDSYNC.Connect("client_joined", Callable.From((int clientID) => ClientJoined?.Invoke(clientID)));
 		GDSYNC.Connect("client_left", Callable.From((int clientID) => ClientLeft?.Invoke(clientID)));
 		GDSYNC.Connect("player_data_changed", Callable.From((int clientID, string key, Variant value) => PlayerDataChanged?.Invoke(clientID, key, value)));
-		GDSYNC.Connect("kicked", Callable.From(() => Kicked?.Invoke()));
+		GDSYNC.Connect("kicked", Callable.From((string reason) =>
+		{
+			Kicked?.Invoke();
+			KickedWithReason?.Invoke(reason);
+		}));
 		GDSYNC.Connect("lobbies_received", Callable.From((Array lobbies) => LobbiesReceived?.Invoke(lobbies)));
 		GDSYNC.Connect("lobby_received", Callable.From((Dictionary lobby) => LobbyReceived?.Invoke(lobby)));
+		GDSYNC.Connect("matchmaking_started", Callable.From(() => MatchmakingStarted?.Invoke()));
+		GDSYNC.Connect("matchmaking_status_changed", Callable.From((int status, Dictionary details) => MatchmakingStatusChanged?.Invoke(status, details)));
+		GDSYNC.Connect("matchmaking_match_found", Callable.From((string lobbyName) => MatchmakingMatchFound?.Invoke(lobbyName)));
+		GDSYNC.Connect("matchmaking_failed", Callable.From((int error) => MatchmakingFailed?.Invoke(error)));
+		GDSYNC.Connect("matchmaking_cancelled", Callable.From(() => MatchmakingCancelled?.Invoke()));
+		GDSYNC.Connect("lobby_switch_failed", Callable.From((int error) => LobbySwitchFailed?.Invoke(error)));
 		GDSYNC.Connect("host_changed", Callable.From((bool isHost, int hostID) => HostChanged?.Invoke(isHost, hostID)));
 		GDSYNC.Connect("synced_event_triggered", Callable.From((string eventName, Array parameters) => SyncedEventTriggered?.Invoke(eventName, parameters)));
 		GDSYNC.Connect("change_scene_called", Callable.From((string scenePath) => ChangeSceneCalled?.Invoke(scenePath)));
 		GDSYNC.Connect("change_scene_success", Callable.From((string scenePath) => ChangeSceneSuccess?.Invoke(scenePath)));
 		GDSYNC.Connect("change_scene_failed", Callable.From((string scenePath) => ChangeSceneFailed?.Invoke(scenePath)));
 		GDSYNC.Connect("steam_join_request", Callable.From((string lobbyName, bool hasPassword) => SteamJoinRequest?.Invoke(lobbyName, hasPassword)));
+		GDSYNC.Connect("account_logged_in", Callable.From((string username) => AccountLoggedIn?.Invoke(username)));
+		GDSYNC.Connect("account_logged_out", Callable.From(() => AccountLoggedOut?.Invoke()));
 	}
 
 
@@ -267,15 +321,32 @@ public partial class GDSync : Node
 	/// <returns>The perceived ping in seconds, or -1 if the calculation failed.</returns>
 	public static async Task<float> GetClientPerceivedPing(int clientId)
 	{
-		var result = await CallAwaited("get_client_percieved_ping", new Array { clientId });
+		var result = await CallAwaited("get_client_perceived_ping", new Array { clientId });
 		return CastToFloat(result[0]);
+	}
+
+	/// <summary>
+	/// Sets local artificial latency for debugging. The delay is applied to both outgoing and incoming packets.
+	/// Set to 0 to disable.
+	/// </summary>
+	/// <param name="latencyMs">The artificial latency in milliseconds.</param>
+	public static void SetArtificialLatency(int latencyMs)
+	{
+		GDSYNC.Call("set_artificial_latency", latencyMs);
+	}
+
+	/// <summary>
+	/// Returns the currently configured local artificial latency in milliseconds.
+	/// </summary>
+	public static int GetArtificialLatency()
+	{
+		return (int)GDSYNC.Call("get_artificial_latency");
 	}
 
 	/// <summary>
 	/// Returns the Client ID of the last client to perform a remote function call on this client.
 	/// Useful for knowing where a remote function call came from.
 	/// Returns -1 if nobody performed a remote function call yet.
-	/// <para><b>IMPORTANT:</b> For this function to work, make sure to enable it in the GD-Sync configuration menu.</para>
 	/// </summary>
 	/// <returns>The Client ID of the sender, or -1 if no remote call was received.</returns>
 	public static int GetSenderID()
@@ -340,77 +411,131 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
+	/// Synchronizes a variable to clients interested in the nearest InterestObject.
+	/// Falls back to <see cref="SyncVar"/> when no InterestObject is found.
+	/// </summary>
+	public static void SyncVarRelevant(GodotObject target, string variableName, bool reliable = true)
+	{
+		GDSYNC.Call("sync_var_relevant", target, variableName, reliable);
+	}
+
+	/// <summary>
+	/// Synchronizes a variable to a specific client only when that client is interested in the nearest InterestObject.
+	/// Falls back to <see cref="SyncVarOn"/> when no InterestObject is found.
+	/// </summary>
+	public static void SyncVarOnRelevant(int clientId, GodotObject target, string variableName, bool reliable = true)
+	{
+		GDSYNC.Call("sync_var_on_relevant", clientId, target, variableName, reliable);
+	}
+
+	/// <summary>
 	/// Calls a function on a Node or Resource on all other clients in the current lobby, excluding yourself. If the request fails to deliver it will reattempt until successful.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">The parameters of the function you are calling (if it has any).</param>
-	public static void CallFunc(Callable callable, Array parameters = null)
+	public static void CallFunc(Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func", BuildCallArguments(new Array() { callable }, parameters));
 	}
 
 	/// <summary>
 	/// Calls a function on a Node or Resource on all other clients in the current lobby, excluding yourself. If the request fails to deliver it will not reattempt, may result in lower latency compared to the regular version.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">The parameters of the function you are calling (if it has any).</param>
-	public static void CallFuncUnreliable(Callable callable, Array parameters = null)
+	public static void CallFuncUnreliable(Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func_unreliable", BuildCallArguments(new Array() { callable }, parameters));
 	}
 
 	/// <summary>
 	/// Calls a function on a Node or Resource on a specific client in the current lobby. If the request fails to deliver it will reattempt until successful.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="clientId">The Client ID of the client you want to call the function on.</param>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">The parameters of the function you are calling (if it has any).</param>
-	public static void CallFuncOn(int clientId, Callable callable, Array parameters = null)
+	public static void CallFuncOn(int clientId, Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func_on", BuildCallArguments(new Array() { clientId, callable }, parameters));
 	}
 
 	/// <summary>
 	/// Calls a function on a Node or Resource on a specific client in the current lobby. If the request fails to deliver it will not reattempt, may result in lower latency compared to the regular version.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="clientId">The Client ID of the client you want to call the function on.</param>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">Optional parameters.</param>
-	public static void CallFuncOnUnreliable(int clientId, Callable callable, Array parameters = null)
+	public static void CallFuncOnUnreliable(int clientId, Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func_on_unreliable", BuildCallArguments(new Array() { clientId, callable }, parameters));
 	}
 
 	/// <summary>
 	/// Calls a function on a Node or Resource on all clients in the current lobby, including yourself. If the request fails to deliver it will reattempt until successful.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">The parameters of the function you are calling (if it has any).</param>
-	public static void CallFuncAll(Callable callable, Array parameters = null)
+	public static void CallFuncAll(Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func_all", BuildCallArguments(new Array() { callable }, parameters));
 	}
 
 	/// <summary>
 	/// Calls a function on a Node or Resource on all clients in the current lobby, including yourself. If the request fails to deliver it will not reattempt, may result in lower latency compared to the regular version.
-	/// Make sure that the function is exposed using <see cref="ExposeFunc(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
+	/// Make sure that the function is exposed using <see cref="ExposeFunction(Callable)"/> or <see cref="ExposeNode(Node)"/>/<see cref="ExposeResource(RefCounted)"/>.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function that you want to call.</param>
 	/// <param name="parameters">The parameters of the function you are calling (if it has any).</param>
-	public static void CallFuncAllUnreliable(Callable callable, Array parameters = null)
+	public static void CallFuncAllUnreliable(Callable callable, params Variant[] parameters)
 	{
 		GDSYNC.Callv("call_func_all_unreliable", BuildCallArguments(new Array() { callable }, parameters));
+	}
+
+	/// <summary>Calls a function reliably on interested clients, excluding yourself.</summary>
+	public static void CallFuncRelevant(Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_relevant", BuildCallArguments(new Array() { callable }, parameters));
+	}
+
+	/// <summary>Calls a function unreliably on interested clients, excluding yourself.</summary>
+	public static void CallFuncRelevantUnreliable(Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_relevant_unreliable", BuildCallArguments(new Array() { callable }, parameters));
+	}
+
+	/// <summary>Calls a function reliably on a specific client only when that client is interested.</summary>
+	public static void CallFuncOnRelevant(int clientId, Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_on_relevant", BuildCallArguments(new Array() { clientId, callable }, parameters));
+	}
+
+	/// <summary>Calls a function unreliably on a specific client only when that client is interested.</summary>
+	public static void CallFuncOnRelevantUnreliable(int clientId, Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_on_relevant_unreliable", BuildCallArguments(new Array() { clientId, callable }, parameters));
+	}
+
+	/// <summary>Calls a function reliably locally and on all interested clients.</summary>
+	public static void CallFuncAllRelevant(Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_all_relevant", BuildCallArguments(new Array() { callable }, parameters));
+	}
+
+	/// <summary>Calls a function unreliably locally and on all interested clients.</summary>
+	public static void CallFuncAllRelevantUnreliable(Callable callable, params Variant[] parameters)
+	{
+		GDSYNC.Callv("call_func_all_relevant_unreliable", BuildCallArguments(new Array() { callable }, parameters));
 	}
 
 	/// <summary>
@@ -420,7 +545,7 @@ public partial class GDSync : Node
 	/// </summary>
 	/// <param name="targetSignal">The signal you want to emit.</param>
 	/// <param name="parameters">The parameters of the signal you are emitting (if it has any).</param>
-	public static void EmitSignalRemote(Signal targetSignal, Array parameters = null)
+	public static void EmitSignalRemote(Signal targetSignal, params Variant[] parameters)
 	{
 		GDSYNC.Callv("emit_signal_remote", BuildCallArguments(new Array() { targetSignal }, parameters));
 	}
@@ -433,7 +558,7 @@ public partial class GDSync : Node
 	/// <param name="clientId">The Client ID of the client you want to emit the signal on.</param>
 	/// <param name="targetSignal">The signal you want to emit.</param>
 	/// <param name="parameters">The parameters of the signal you are emitting (if it has any).</param>
-	public static void EmitSignalRemoteOn(int clientId, Signal targetSignal, Array parameters = null)
+	public static void EmitSignalRemoteOn(int clientId, Signal targetSignal, params Variant[] parameters)
 	{
 		GDSYNC.Callv("emit_signal_remote_on", BuildCallArguments(new Array() { clientId, targetSignal }, parameters));
 	}
@@ -445,9 +570,27 @@ public partial class GDSync : Node
 	/// </summary>
 	/// <param name="targetSignal">The signal you want to emit.</param>
 	/// <param name="parameters">The parameters of the signal you are emitting (if it has any).</param>
-	public static void EmitSignalRemoteAll(Signal targetSignal, Array parameters = null)
+	public static void EmitSignalRemoteAll(Signal targetSignal, params Variant[] parameters)
 	{
 		GDSYNC.Callv("emit_signal_remote_all", BuildCallArguments(new Array() { targetSignal }, parameters));
+	}
+
+	/// <summary>Emits a signal on interested clients, excluding yourself.</summary>
+	public static void EmitSignalRemoteRelevant(Signal targetSignal, params Variant[] parameters)
+	{
+		GDSYNC.Callv("emit_signal_remote_relevant", BuildCallArguments(new Array() { targetSignal }, parameters));
+	}
+
+	/// <summary>Emits a signal on a specific client only when that client is interested.</summary>
+	public static void EmitSignalRemoteOnRelevant(int clientId, Signal targetSignal, params Variant[] parameters)
+	{
+		GDSYNC.Callv("emit_signal_remote_on_relevant", BuildCallArguments(new Array() { clientId, targetSignal }, parameters));
+	}
+
+	/// <summary>Emits a signal locally and on all interested clients.</summary>
+	public static void EmitSignalRemoteAllRelevant(Signal targetSignal, params Variant[] parameters)
+	{
+		GDSYNC.Callv("emit_signal_remote_all_relevant", BuildCallArguments(new Array() { targetSignal }, parameters));
 	}
 
 	/// <summary>
@@ -521,9 +664,9 @@ public partial class GDSync : Node
 		GDSYNC.Call("change_scene", scenePath);
 	}
 
-	private static Array BuildCallArguments(Array prefix, Array parameters)
+	private static Array BuildCallArguments(Array prefix, Variant[] parameters)
 	{
-		if (parameters == null || parameters.Count == 0)
+		if (parameters == null || parameters.Length == 0)
 		{
 			return prefix;
 		}
@@ -549,7 +692,18 @@ public partial class GDSync : Node
 
 	private static async Task<Variant[]> CallAwaited(string method, Array args)
 	{
-		var asyncRequest = GDSYNC.Callv(method, args).AsGodotObject();
+		Variant callResult = GDSYNC.Callv(method, args);
+		if (callResult.VariantType != Variant.Type.Object)
+		{
+			return new Variant[] { callResult };
+		}
+
+		var asyncRequest = callResult.AsGodotObject();
+		if (asyncRequest == null || !asyncRequest.HasSignal("completed"))
+		{
+			return new Variant[] { callResult };
+		}
+
 		var result = await GDSYNC_SHARP.ToSignal(asyncRequest, "completed");
 		return result;
 	}
@@ -568,7 +722,7 @@ public partial class GDSync : Node
 
 	/// <summary>
 	/// If set to true, all remote function calls and variable synchronization requests will be blocked by default.
-	/// Only functions, variables and Nodes that are exposed using <see cref="ExposeFunc(Callable)"/>, <see cref="ExposeVar(GodotObject, string)"/> and <see cref="ExposeNode(Node)"/>
+	/// Only functions, variables and Nodes that are exposed using <see cref="ExposeFunction(Callable)"/>, <see cref="ExposeVar(GodotObject, string)"/> and <see cref="ExposeNode(Node)"/>
 	/// may be accessed remotely. This setting can also be found in the configuration menu.
 	/// <para>We STRONGLY recommend keeping this enabled at all times. Disabling it may introduce security risks.</para>
 	/// </summary>
@@ -598,7 +752,7 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Exposes a Node so that all <see cref="CallFunc(Callable, Array)"/>, <see cref="CallFuncOn(int, Callable, Array)"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will succeed.
+	/// Exposes a Node so that all <see cref="CallFunc(Callable, Variant[])"/>, <see cref="CallFuncOn(int, Callable, Variant[])"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will succeed.
 	/// Only use if the Node and its script contain non-destructive functions.
 	/// <para><b>IMPORTANT:</b> Make sure the NodePath of the Node matches up on all clients.</para>
 	/// </summary>
@@ -609,8 +763,8 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Hides a Node so that all <see cref="CallFunc(Callable, Array)"/>, <see cref="CallFuncOn(int, Callable, Array)"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will fail.
-	/// This will not revert <see cref="ExposeFunc(Callable)"/> and <see cref="ExposeVar(GodotObject, string)"/>.
+	/// Hides a Node so that all <see cref="CallFunc(Callable, Variant[])"/>, <see cref="CallFuncOn(int, Callable, Variant[])"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will fail.
+	/// This will not revert <see cref="ExposeFunction(Callable)"/> and <see cref="ExposeVar(GodotObject, string)"/>.
 	/// <para><b>IMPORTANT:</b> Make sure the NodePath of the Node matches up on all clients.</para>
 	/// </summary>
 	/// <param name="node">The Node you want to hide.</param>
@@ -620,7 +774,7 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Exposes a Resource so that all <see cref="CallFunc(Callable, Array)"/>, <see cref="CallFuncOn(int, Callable, Array)"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will succeed.
+	/// Exposes a Resource so that all <see cref="CallFunc(Callable, Variant[])"/>, <see cref="CallFuncOn(int, Callable, Variant[])"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will succeed.
 	/// Only use if the Resource and its script contain non-destructive functions.
 	/// <para><b>IMPORTANT:</b> Make sure the Resource has been registered using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
@@ -631,8 +785,8 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Hides a Resource so that all <see cref="CallFunc(Callable, Array)"/>, <see cref="CallFuncOn(int, Callable, Array)"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will fail.
-	/// This will not revert <see cref="ExposeFunc(Callable)"/> and <see cref="ExposeVar(GodotObject, string)"/>.
+	/// Hides a Resource so that all <see cref="CallFunc(Callable, Variant[])"/>, <see cref="CallFuncOn(int, Callable, Variant[])"/>, <see cref="SyncVar(GodotObject, string, bool)"/> and <see cref="SyncVarOn(int, GodotObject, string, bool)"/> will fail.
+	/// This will not revert <see cref="ExposeFunction(Callable)"/> and <see cref="ExposeVar(GodotObject, string)"/>.
 	/// <para><b>IMPORTANT:</b> Make sure the Resource has been registered using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="resource">The Resource you want to hide.</param>
@@ -642,17 +796,27 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Exposes a function so that <see cref="CallFunc(Callable, Array)"/> and <see cref="CallFuncOn(int, Callable, Array)"/> will succeed.
+	/// Exposes a function so that <see cref="CallFunc(Callable, Variant[])"/> and <see cref="CallFuncOn(int, Callable, Variant[])"/> will succeed.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function you want to expose.</param>
 	public static void ExposeFunction(Callable callable)
 	{
-		GDSYNC.Call("expose_func", callable);
+		ExposeFunction(callable, EXPOSE_PERMISSION.ANYONE);
 	}
 
 	/// <summary>
-	/// Hides a function so that <see cref="CallFunc(Callable, Array)"/> and <see cref="CallFuncOn(int, Callable, Array)"/> will fail.
+	/// Exposes a function with a specific remote access permission.
+	/// </summary>
+	/// <param name="callable">The function you want to expose.</param>
+	/// <param name="permission">Who may call the exposed function.</param>
+	public static void ExposeFunction(Callable callable, EXPOSE_PERMISSION permission)
+	{
+		GDSYNC.Call("expose_func", callable, (int)permission);
+	}
+
+	/// <summary>
+	/// Hides a function so that <see cref="CallFunc(Callable, Variant[])"/> and <see cref="CallFuncOn(int, Callable, Variant[])"/> will fail.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="callable">The function you want to hide.</param>
@@ -662,17 +826,27 @@ public partial class GDSync : Node
 	}
 
 	/// <summary>
-	/// Exposes a signal so that <see cref="EmitSignalRemote(Signal, Array)"/>, <see cref="EmitSignalRemoteOn(int, Signal, Array)"/> and <see cref="EmitSignalRemoteAll(Signal, Array)"/> will succeed.
+	/// Exposes a signal so that <see cref="EmitSignalRemote(Signal, Variant[])"/>, <see cref="EmitSignalRemoteOn(int, Signal, Variant[])"/> and <see cref="EmitSignalRemoteAll(Signal, Variant[])"/> will succeed.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="signal">The signal you want to expose.</param>
 	public static void ExposeSignal(Signal signal)
 	{
-		GDSYNC.Call("expose_signal", signal);
+		ExposeSignal(signal, EXPOSE_PERMISSION.ANYONE);
 	}
 
 	/// <summary>
-	/// Hides a signal so that <see cref="EmitSignalRemote(Signal, Array)"/>, <see cref="EmitSignalRemoteOn(int, Signal, Array)"/> and <see cref="EmitSignalRemoteAll(Signal, Array)"/> will fail.
+	/// Exposes a signal with a specific remote access permission.
+	/// </summary>
+	/// <param name="signal">The signal you want to expose.</param>
+	/// <param name="permission">Who may emit the exposed signal.</param>
+	public static void ExposeSignal(Signal signal, EXPOSE_PERMISSION permission)
+	{
+		GDSYNC.Call("expose_signal", signal, (int)permission);
+	}
+
+	/// <summary>
+	/// Hides a signal so that <see cref="EmitSignalRemote(Signal, Variant[])"/>, <see cref="EmitSignalRemoteOn(int, Signal, Variant[])"/> and <see cref="EmitSignalRemoteAll(Signal, Variant[])"/> will fail.
 	/// <para><b>IMPORTANT:</b> For Nodes, make sure the NodePath of the Node matches up on all clients. For Resources, register them using <see cref="RegisterResource(RefCounted, string)"/>.</para>
 	/// </summary>
 	/// <param name="signal">The signal you want to hide.</param>
@@ -689,7 +863,18 @@ public partial class GDSync : Node
 	/// <param name="variableName">The name of the variable you want to expose.</param>
 	public static void ExposeVar(GodotObject target, string variableName)
 	{
-		GDSYNC.Call("expose_var", target, variableName);
+		ExposeVar(target, variableName, EXPOSE_PERMISSION.ANYONE);
+	}
+
+	/// <summary>
+	/// Exposes a variable with a specific remote access permission.
+	/// </summary>
+	/// <param name="target">The Object on which you want to expose the variable.</param>
+	/// <param name="variableName">The name of the variable you want to expose.</param>
+	/// <param name="permission">Who may synchronize the exposed variable.</param>
+	public static void ExposeVar(GodotObject target, string variableName, EXPOSE_PERMISSION permission)
+	{
+		GDSYNC.Call("expose_var", target, variableName, (int)permission);
 	}
 
 	/// <summary>
@@ -951,9 +1136,10 @@ public partial class GDSync : Node
 	/// Kicks a client from the current lobby. Only works for the host of the lobby.
 	/// </summary>
 	/// <param name="clientId">The ID of the client you want to kick.</param>
-	public static void KickLobbyClient(int clientId)
+	/// <param name="reason">An optional reason sent to the kicked client.</param>
+	public static void KickLobbyClient(int clientId, string reason = "")
 	{
-		GDSYNC.Call("lobby_kick_client", clientId);
+		GDSYNC.Call("lobby_kick_client", clientId, reason);
 	}
 
 	/// <summary>
@@ -1127,6 +1313,71 @@ public partial class GDSync : Node
 	}
 	#endregion
 
+	// Matchmaking functions -------------------------------------------------------
+	// *****************************************************************************
+	// -----------------------------------------------------------------------------
+	#region Matchmaking Functions
+
+	/// <summary>
+	/// Starts matchmaking. Starting a new request automatically cancels the previous request.
+	/// Matchmaking is not available in local multiplayer.
+	/// <para>Use <see cref="MatchmakingRequest.SetMinPlayers"/> to create a lobby before it is full;
+	/// later queued players can still join while that lobby stays open.</para>
+	/// <para>See <see cref="MatchmakingRequest"/> for all configuration options.</para>
+	/// <example>
+	/// <code>
+	/// GDSync.MatchmakingMatchFound += (lobbyName) => GD.Print("Found " + lobbyName);
+	/// GDSync.MatchmakingFailed += (error) => GD.PushError(error);
+	///
+	/// var request = new MatchmakingRequest(4)
+	///     .SetMinPlayers(2)
+	///     .SetRequiredTags(new Dictionary { { "Mode", "Co-op" } })
+	///     .SetTimeout(60f);
+	/// GDSync.StartMatchmaking(request);
+	/// </code>
+	/// </example>
+	/// </summary>
+	/// <param name="request">The request describing what kind of match to look for.</param>
+	public static void StartMatchmaking(MatchmakingRequest request)
+	{
+		GDSYNC.Call("matchmaking_start", request.Request);
+	}
+
+	/// <summary>
+	/// Cancels the active matchmaking request. Emits <see cref="MatchmakingCancelled"/>.
+	/// </summary>
+	public static void CancelMatchmaking()
+	{
+		GDSYNC.Call("matchmaking_cancel");
+	}
+
+	/// <summary>
+	/// Returns whether a matchmaking request is currently active.
+	/// </summary>
+	public static bool MatchmakingIsActive()
+	{
+		return (bool)GDSYNC.Call("matchmaking_is_active");
+	}
+
+	/// <summary>
+	/// Returns the status of the active matchmaking request.
+	/// </summary>
+	/// <returns>The current status. See <see cref="MATCHMAKING_STATUS"/> for possible values.</returns>
+	public static MATCHMAKING_STATUS GetMatchmakingStatus()
+	{
+		return (MATCHMAKING_STATUS)(int)GDSYNC.Call("matchmaking_get_status");
+	}
+
+	/// <summary>
+	/// Returns additional information about the status of the active matchmaking request,
+	/// such as the amount of queued players. Empty if no request is active.
+	/// </summary>
+	public static Dictionary GetMatchmakingStatusDetails()
+	{
+		return (Dictionary)GDSYNC.Call("matchmaking_get_status_details");
+	}
+	#endregion
+
 	// Player functions ------------------------------------------------------------
 	// *****************************************************************************
 	// -----------------------------------------------------------------------------
@@ -1193,13 +1444,21 @@ public partial class GDSync : Node
 	/// <summary>
 	/// Gets the username of the player with the given client ID. By default uses the ID of the local player.
 	/// </summary>
-	/// <param name="clientId">The ID of this client.</param>
 	/// <param name="defaultValue">The default value to return if the username was not found.</param>
 	/// <returns>The username of the player, or the default value if not found.</returns>
-	public static string GetPlayerUsername(int clientId = -1, string defaultValue = "")
+	public static string GetPlayerUsername(string defaultValue = "")
 	{
-		var targetClient = clientId < 0 ? GetClientID() : clientId;
-		return (string)GDSYNC.Call("player_get_username", targetClient, defaultValue);
+		return (string)GDSYNC.Call("player_get_username", GetClientID(), defaultValue);
+	}
+
+	/// <summary>
+	/// Gets the username of the player with the given client ID.
+	/// </summary>
+	/// <param name="clientId">The client ID to query.</param>
+	/// <param name="defaultValue">The default value to return if the username was not found.</param>
+	public static string GetPlayerUsername(int clientId, string defaultValue = "")
+	{
+		return (string)GDSYNC.Call("player_get_username", clientId, defaultValue);
 	}
 	#endregion
 
@@ -1271,6 +1530,12 @@ public partial class GDSync : Node
 	{
 		var result = await CallAwaited("account_is_verified", new Array { username });
 		return (Dictionary)result[0];
+	}
+
+	/// <summary>Returns whether this client is currently logged into a GD-Sync account.</summary>
+	public static bool AccountIsLoggedIn()
+	{
+		return (bool)GDSYNC.Call("account_is_logged_in");
 	}
 
 	/// <summary>
@@ -1440,6 +1705,24 @@ public partial class GDSync : Node
 	public static async Task<Dictionary> GetFriends()
 	{
 		var result = await CallAwaited("account_get_friends", new Array());
+		return (Dictionary)result[0];
+	}
+
+	/// <summary>
+	/// Invites a friend to the current lobby.
+	/// </summary>
+	public static async Task<ACCOUNT_INVITE_FRIEND_TO_LOBBY_RESPONSE_CODE> InviteFriendToLobby(string friend)
+	{
+		var result = await CallAwaited("account_invite_friend_to_lobby", new Array { friend });
+		return (ACCOUNT_INVITE_FRIEND_TO_LOBBY_RESPONSE_CODE)(int)result[0];
+	}
+
+	/// <summary>
+	/// Returns the current account's pending lobby invitations.
+	/// </summary>
+	public static async Task<Dictionary> GetLobbyInvitations()
+	{
+		var result = await CallAwaited("account_get_lobby_invitations", new Array());
 		return (Dictionary)result[0];
 	}
 
@@ -1644,173 +1927,20 @@ public partial class GDSync : Node
 
 
 	#region enums
-	private enum CONNECTION_STATUS
-	{
-		LOBBY_SWITCH = -1,
-		DISABLED,
-		FINDING_LB,
-		PINGING_SERVERS,
-		CONNECTING,
-		CONNECTED,
-		CONNECTION_SECURED,
-	}
-
-	private enum PACKET_CHANNEL
-	{
-		SETUP,
-		SERVER,
-		RELIABLE,
-		UNRELIABLE,
-		INTERNAL,
-	}
-
-	private enum PACKET_VALUE
-	{
-		PADDING,
-		CLIENT_REQUESTS,
-		SERVER_REQUESTS,
-		INTERNAL_REQUESTS,
-	}
-
-	private enum REQUEST_TYPE
-	{
-		VALIDATE_KEY,
-		SECURE_CONNECTION,
-		MESSAGE,
-		SET_VARIABLE,
-		CALL_FUNCTION,
-		SET_VARIABLE_CACHED,
-		CALL_FUNCTION_CACHED,
-		CACHE_NODE_PATH,
-		ERASE_NODE_PATH_CACHE,
-		CACHE_NAME,
-		ERASE_NAME_CACHE,
-		SET_MC_OWNER,
-		CREATE_LOBBY,
-		JOIN_LOBBY,
-		LEAVE_LOBBY,
-		OPEN_LOBBY,
-		CLOSE_LOBBY,
-		SET_LOBBY_TAG,
-		ERASE_LOBBY_TAG,
-		SET_LOBBY_DATA,
-		ERASE_LOBBY_DATA,
-		SET_LOBBY_VISIBILITY,
-		SET_LOBBY_PLAYER_LIMIT,
-		SET_LOBBY_PASSWORD,
-		GET_PUBLIC_LOBBIES,
-		SET_PLAYER_USERNAME,
-		SET_PLAYER_DATA,
-		ERASE_PLAYER_DATA,
-		SET_CONNECT_TIME,
-		SET_SETTING,
-		CREATE_ACCOUNT,
-		DELETE_ACCOUNT,
-		VERIFY_ACCOUNT,
-		LOGIN,
-		LOGIN_FROM_SESSION,
-		LOGOUT,
-		SET_PLAYER_DOCUMENT,
-		HAS_PLAYER_DOCUMENT,
-		GET_PLAYER_DOCUMENT,
-		DELETE_PLAYER_DOCUMENT,
-	}
-
-	private enum MESSAGE_TYPE
-	{
-		CRITICAL_ERROR,
-		CLIENT_ID_RECEIVED,
-		CLIENT_KEY_RECEIVED,
-		INVALID_PUBLIC_KEY,
-		SET_NODE_PATH_CACHE,
-		ERASE_NODE_PATH_CACHE,
-		SET_NAME_CACHE,
-		ERASE_NAME_CACHE,
-		SET_MC_OWNER,
-		HOST_CHANGED,
-		LOBBY_CREATED,
-		LOBBY_CREATION_FAILED,
-		LOBBY_JOINED,
-		SWITCH_SERVER,
-		LOBBY_JOIN_FAILED,
-		LOBBIES_RECEIVED,
-		LOBBY_DATA_RECEIVED,
-		LOBBY_DATA_CHANGED,
-		LOBBY_TAGS_CHANGED,
-		PLAYER_DATA_RECEIVED,
-		PLAYER_DATA_CHANGED,
-		CLIENT_JOINED,
-		CLIENT_LEFT,
-		SET_CONNECT_TIME,
-		SET_SENDER_ID,
-		SET_DATA_USAGE,
-	}
-
-	private enum SETTING
-	{
-		API_VERSION,
-		USE_SENDER_ID,
-	}
-
-	private enum DATA
-	{
-		REQUEST_TYPE,
-		NAME,
-		VALUE,
-		TARGET_CLIENT = 3,
-	}
-
-	private enum LOBBY_DATA
-	{
-		NAME = 1,
-		PASSWORD = 2,
-		PARAMETERS = 1,
-		VISIBILITY = 1,
-		VALUE = 2,
-	}
-
-	private enum FUNCTION_DATA
-	{
-		NODE_PATH = 1,
-		NAME = 2,
-		PARAMETERS = 4
-	}
-
-	private enum VAR_DATA
-	{
-		NODE_PATH = 1,
-		NAME = 2,
-		VALUE = 4
-	}
-
-	private enum MESSAGE_DATA
-	{
-		TYPE = 1,
-		VALUE = 2,
-		ERROR = 3,
-		VALUE2 = 3,
-	}
-
 	public enum CRITICAL_ERROR
 	{
 		LOBBY_DATA_FULL,
 		LOBBY_TAGS_FULL,
 		PLAYER_DATA_FULL,
 		REQUEST_TOO_LARGE,
-	}
-
-	private enum INTERNAL_MESSAGE
-	{
-		LOBBY_UPDATED,
-		LOBBY_DELETED,
-		REQUEST_LOBBIES,
-		INCREASE_DATA_USAGE,
+		OBJECT_IN_REQUEST,
 	}
 
 	public enum CONNECTION_FAILED
 	{
 		INVALID_PUBLIC_KEY,
 		TIMEOUT,
+		LOCAL_PORT_ERROR,
 	}
 
 	public enum LOBBY_CREATION_ERROR
@@ -1822,6 +1952,7 @@ public partial class GDSync : Node
 		TAGS_TOO_LARGE,
 		DATA_TOO_LARGE,
 		ON_COOLDOWN,
+		LOCAL_PORT_ERROR,
 	}
 
 	public enum LOBBY_JOIN_ERROR
@@ -1831,6 +1962,56 @@ public partial class GDSync : Node
 		LOBBY_IS_FULL,
 		INCORRECT_PASSWORD,
 		DUPLICATE_USERNAME,
+	}
+
+	public enum LOBBY_NAME_CHANGE_ERROR
+	{
+		NAME_ALREADY_EXISTS,
+		NAME_TOO_SHORT,
+		NAME_TOO_LONG,
+		ON_COOLDOWN,
+	}
+
+	public enum MATCHMAKING_SEARCH_MODE
+	{
+		PUBLIC_ONLY,
+		PUBLIC_THEN_MATCHMAKE,
+		MATCHMAKE_ONLY,
+	}
+
+	public enum MATCHMAKING_STATUS
+	{
+		INACTIVE,
+		SEARCHING_PUBLIC,
+		WAITING_FOR_PLAYERS,
+		MATCH_FOUND,
+		JOINING,
+	}
+
+	public enum MATCHMAKING_ERROR
+	{
+		INVALID_REQUEST,
+		ALREADY_IN_LOBBY,
+		NO_MATCH,
+		TIMEOUT,
+		UNSUPPORTED_LOCAL,
+		JOIN_FAILED,
+	}
+
+	public enum LOBBY_SWITCH_ERROR
+	{
+		INVALID_RESERVATION,
+		RESERVATION_EXPIRED,
+		DESTINATION_UNREACHABLE,
+		JOIN_FAILED,
+		ROLLBACK_FAILED,
+	}
+
+	public enum EXPOSE_PERMISSION
+	{
+		ANYONE,
+		HOST,
+		CLIENT,
 	}
 
 	public enum NODE_REPLICATION_SETTINGS
@@ -2079,7 +2260,8 @@ public partial class GDSync : Node
 		NO_DATABASE,
 		NOT_LOGGED_IN,
 		STORAGE_FULL,
-		LEADERBOARD_DOESNT_EXIST
+		LEADERBOARD_DOESNT_EXIST,
+		DATA_TOO_LAGE,
 	}
 
 	public enum DELETE_SCORE_RESPONSE_CODE
@@ -2174,6 +2356,59 @@ public partial class GDSync : Node
 		FRIEND_DOESNT_EXIST,
 	}
 
+	public enum ACCOUNT_GET_FRIENDS_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+	}
+
+	public enum ACCOUNT_GET_FRIEND_STATUS_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		USER_DOESNT_EXIST,
+	}
+
+	public enum ACCOUNT_INVITE_FRIEND_TO_LOBBY_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+		STORAGE_FULL,
+		USER_DOESNT_EXIST,
+		NOT_FRIEND,
+		NOT_IN_LOBBY,
+	}
+
+	public enum ACCOUNT_GET_LOBBY_INVITATIONS_RESPONSE_CODE
+	{
+		SUCCESS,
+		NO_RESPONSE_FROM_SERVER,
+		DATA_CAP_REACHED,
+		RATE_LIMIT_EXCEEDED,
+		NO_DATABASE,
+		NOT_LOGGED_IN,
+	}
+
+	public enum FRIEND_STATUS
+	{
+		NONE,
+		INCOMING_REQUEST,
+		FRIEND,
+		WAITING_FOR_REPLY,
+	}
+
 	public enum ACCOUNT_BAN_RESPONSE_CODE
 	{
 		SUCCESS,
@@ -2221,4 +2456,153 @@ public partial class GDSync : Node
 		BANNED,
 	}
 	#endregion
+}
+
+/// <summary>
+/// Builder for a matchmaking search passed to <see cref="GDSync.StartMatchmaking"/>.
+/// <para>Construct a request, optionally chain configuration methods, then start matchmaking and handle
+/// <see cref="GDSync.MatchmakingStarted"/>, <see cref="GDSync.MatchmakingStatusChanged"/>,
+/// <see cref="GDSync.MatchmakingMatchFound"/>, <see cref="GDSync.MatchmakingFailed"/> and
+/// <see cref="GDSync.MatchmakingCancelled"/>. Starting a new request cancels any active one.
+/// Closed lobbies are never joined.</para>
+/// <para>The constructor player limit is the maximum lobby size. <see cref="SetMinPlayers"/> controls how many
+/// queued players are required before a match lobby is created (default: equal to the player limit).
+/// After creation, more matching players can join while the lobby stays open.</para>
+/// <example>
+/// <code>
+/// var request = new MatchmakingRequest(8)
+///     .SetMinPlayers(2)
+///     .SetRequiredTags(new Dictionary { { "Mode", "PvP" } })
+///     .SetTimeout(60f);
+/// GDSync.StartMatchmaking(request);
+/// </code>
+/// </example>
+/// </summary>
+public class MatchmakingRequest
+{
+	private const string SCRIPT_PATH = "res://addons/GD-Sync/Scripts/Types/MatchmakingRequest.gd";
+
+	private static GDScript _script;
+
+	/// <summary>
+	/// The GDScript request this class configures. Used internally by <see cref="GDSync.StartMatchmaking"/>.
+	/// </summary>
+	internal GodotObject Request { get; }
+
+	/// <summary>
+	/// Creates a request whose lobbies hold up to <paramref name="playerLimit"/> players.
+	/// <para>Until <see cref="SetMinPlayers"/> is called, the minimum to create a lobby equals
+	/// <paramref name="playerLimit"/>. Must be greater than 0 and within your plan limit.</para>
+	/// </summary>
+	/// <param name="playerLimit">The maximum amount of players in lobbies created by this request.</param>
+	public MatchmakingRequest(int playerLimit)
+	{
+		if (_script == null)
+		{
+			_script = GD.Load<GDScript>(SCRIPT_PATH);
+		}
+
+		Request = (GodotObject)_script.New(playerLimit);
+	}
+
+	/// <summary>
+	/// Sets all required tags at once, matching the tags of <see cref="GDSync.CreateLobby"/>.
+	/// <para>Public lobbies and queued players must include every entry. Replaces any previously set tags.
+	/// Pass an empty dictionary to clear.</para>
+	/// </summary>
+	/// <param name="tags">The tags a lobby or queued player must have.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetRequiredTags(Dictionary tags)
+	{
+		Request.Call("set_required_tags", tags ?? new Dictionary());
+		return this;
+	}
+
+	/// <summary>
+	/// Sets whether to search public lobbies, the matchmaking queue, or both.
+	/// Defaults to <see cref="GDSync.MATCHMAKING_SEARCH_MODE.PUBLIC_THEN_MATCHMAKE"/>.
+	/// </summary>
+	/// <param name="mode">Where this request may find players.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetSearchMode(GDSync.MATCHMAKING_SEARCH_MODE mode)
+	{
+		Request.Call("set_search_mode", (int)mode);
+		return this;
+	}
+
+	/// <summary>
+	/// Sets how many queued players are required before a match lobby is created.
+	/// <para>Lobby capacity remains the constructor player limit. For example, a limit of 8 with a minimum of 2
+	/// creates a lobby at two players; others may join until the lobby is full or closed. Must be between 1 and
+	/// the player limit. Defaults to the full player limit.</para>
+	/// </summary>
+	/// <param name="minPlayers">The amount of players required to create a lobby.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetMinPlayers(int minPlayers)
+	{
+		Request.Call("set_min_players", minPlayers);
+		return this;
+	}
+
+	/// <summary>
+	/// Sets how long to wait before failing with <see cref="GDSync.MATCHMAKING_ERROR.TIMEOUT"/>.
+	/// Use 0 to wait indefinitely.
+	/// </summary>
+	/// <param name="seconds">The amount of seconds before the request times out.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetTimeout(float seconds)
+	{
+		Request.Call("set_timeout", seconds);
+		return this;
+	}
+
+	/// <summary>
+	/// Enables skill based matching using this player's rating.
+	/// <para>If never called, skill is ignored. Use together with <see cref="SetSkillRange"/>.</para>
+	/// </summary>
+	/// <param name="rating">The skill rating of this player.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetSkillRating(float rating)
+	{
+		Request.Call("set_skill_rating", rating);
+		return this;
+	}
+
+	/// <summary>
+	/// Configures the allowed skill distance from <see cref="SetSkillRating"/>.
+	/// <para>The allowed range starts at <paramref name="initial"/> and may grow toward <paramref name="maximum"/>
+	/// by <paramref name="expansionPerSecond"/> while waiting. Expansion is applied when candidates are evaluated.</para>
+	/// </summary>
+	/// <param name="initial">The starting allowed skill distance.</param>
+	/// <param name="maximum">The maximum allowed skill distance.</param>
+	/// <param name="expansionPerSecond">How much the allowed distance grows per second of waiting.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetSkillRange(float initial, float maximum, float expansionPerSecond = 0f)
+	{
+		Request.Call("set_skill_range", initial, maximum, expansionPerSecond);
+		return this;
+	}
+
+	/// <summary>
+	/// Disables skill matching so only tags, limits and search mode apply.
+	/// </summary>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest ClearSkillMatching()
+	{
+		Request.Call("clear_skill_matching");
+		return this;
+	}
+
+	/// <summary>
+	/// Sets private lobby data at once, matching the data of <see cref="GDSync.CreateLobby"/>.
+	/// <para>Applied only to lobbies created by matchmaking, not when joining existing public lobbies.
+	/// Replaces any previously set data. Pass an empty dictionary to clear.</para>
+	/// </summary>
+	/// <param name="data">The starting data of lobbies created by this request.</param>
+	/// <returns>This request, so calls can be chained.</returns>
+	public MatchmakingRequest SetLobbyData(Dictionary data)
+	{
+		Request.Call("set_lobby_data", data ?? new Dictionary());
+		return this;
+	}
 }

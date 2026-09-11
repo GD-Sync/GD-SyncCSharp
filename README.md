@@ -5,7 +5,7 @@ This repo is not intented for direct use. Please download the regular version of
 
 ## Key Features
 - **Interactive Lobbies & Matchmaking:** Enable players to easily find and join each other from across the globe.
-- **Acount System:** Allow players to easily create accounts. Comes with built-in email verification and a moderation system.
+- **Account System:** Allow players to easily create accounts. Comes with built-in email verification and a moderation system.
 - **Persistent Data Storage:** Create databases to store and retrieve data from the cloud.
 - **Global Servers:** Deliver high uptime and seamless gameplay through our extensive global server infrastructure.
 - **In-Depth Analytics:** Gain valuable insights with detailed tracking of player statistics.
@@ -22,6 +22,6 @@ Born from the challenges of multiplayer game development, GD-Sync is a solution 
 
 ---
 
-© 2025 GD-Sync. All rights reserved.
+© 2023-present GD-Sync. All rights reserved.
 - [Terms of Service](https://www.gd-sync.com/terms)
 - [Privacy Policy](https://www.gd-sync.com/privacy-policy)
